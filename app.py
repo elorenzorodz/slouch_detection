@@ -53,9 +53,12 @@ class SlouchApp:
                 if head_tilt_flag:
                     # Yes.
                     # Is user slouching?
-                    slouch_flag, head_tilt_flag = self.is_user_slouching()
-                    print("slouch: ", slouch_flag)
-                    # print("tilt: ", head_tilt_flag)
+                    slouch_flag = self.is_user_slouching()
+
+                    if slouch_flag:
+                        cv2.putText(bgr_image, "You are slouching", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    else:
+                        cv2.putText(bgr_image, "You are sitting properly", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                 else:
                     print(self.angle)
 
@@ -142,7 +145,7 @@ class SlouchApp:
         c_max = self.distance_reference * (1.0 + self.thoracolumbar_tolerance)
 
         slouching_flag = True
-        head_tilt_flag = False
+        # head_tilt_flag = False
 
         # Is user slouching?
         if c_min <= self.distance <= c_max:
@@ -150,8 +153,8 @@ class SlouchApp:
             slouching_flag = False
 
         # Is user's head tilted?
-        if self.angle > 0.4:
-            # Yes.
-            head_tilt_flag = True
+        # if self.angle > 0.4:
+        #     # Yes.
+        #     head_tilt_flag = True
 
-        return slouching_flag, head_tilt_flag
+        return slouching_flag
