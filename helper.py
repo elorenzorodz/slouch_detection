@@ -30,7 +30,7 @@ def get_face_classifier():
 
 def get_distance_reference():
     """
-    The distance reference to properly detect the slouch of the user.
+    The default distance reference to properly detect the slouch of the user.
     :return: The float value of distance reference.
     """
     return 163.51758315239374
