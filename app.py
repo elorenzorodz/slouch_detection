@@ -1,16 +1,37 @@
 import helper
 from math import sqrt, atan
 import cv2
+import time
+import datetime
+import data_access
 
 
 class SlouchApp:
-    def __init__(self, use_webcam=False):
+    def __init__(self, use_webcam=False, start_detect_slouch=False):
         self.use_webcam = use_webcam
-        self.start_detect_slouch = False
+        self.start_detect_slouch = start_detect_slouch if use_webcam else False
         self.eye_classifier = helper.get_eye_classifier()
         self.face_classifier = helper.get_face_classifier()
         self.distance_reference = helper.get_distance_reference()
         self.thoracolumbar_tolerance = helper.get_thoracolumbar_tolerance()
+        self.slouch_list_data = []
+        self.start_time = 0
+
+        # These will be used to compute for time difference for slouching and sitting straight.
+        self.is_slouching = 0
+        self.is_straighten = 0
+
+        # These will be used to save the time difference for slouching and sitting straight.
+        self.slouched_time_difference = 0
+        self.straighten_time_difference = 0
+
+        # These will be used to compute for time difference for head tilted and head straight.
+        self.is_head_tilted = 0
+        self.is_head_straight = 0
+
+        # These will be used to save the time difference for head tilted and head straight.
+        self.head_tilted_time_difference = 0
+        self.head_straight_time_difference = 0
 
         # Initialize face distance and head tilt to 0.
         self.distance = 0
@@ -31,6 +52,11 @@ class SlouchApp:
         """
         Open the webcam or video.
         """
+        # Timer in seconds.
+        self.start_time = time.time()
+
+        print("Slouch detection start")
+
         # Keep showing video.
         while self.video.isOpened():
             # Read the video.
@@ -42,50 +68,69 @@ class SlouchApp:
                 # Stop video capture.
                 break
 
-            # Display quit option.
-            cv2.putText(bgr_image, "Press Q to quit.", (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-
-            # Did user locked in their proper posture?
-            if self.start_detect_slouch:
+            # Does user wanted to use webcam?
+            if self.use_webcam:
                 # Yes.
-                # Start detecting slouch.
-                self.process_slouch_detection(bgr_image)
+                # Display quit option.
+                cv2.putText(bgr_image, "Press Q to quit.", (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+                # Did user locked in their proper posture?
+                if self.start_detect_slouch:
+                    # Yes.
+                    # Start detecting slouch.
+                    self.process_slouch_detection(bgr_image)
+                else:
+                    # No.
+                    # Show controls for setting distance reference.
+                    cv2.putText(bgr_image, "Sit properly, press C to lock in your proper sitting position", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                    cv2.putText(bgr_image, "Press D to use default sitting position", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
+                # Display webcam/video output to window.
+                cv2.imshow("Slouch Detection", bgr_image)
+
+                key_press = cv2.waitKey(1) & 0xFF
+
+                # Did user pressed `q`?
+                if key_press == ord("q"):
+                    # Yes.
+                    # Break out of loop to stop video capture.
+                    break
+                elif key_press == ord("c"):
+                    if not self.start_detect_slouch:
+                        detected_face_flag, face = self.detect_face(bgr_image)
+
+                        # Are there any faces detected?
+                        if detected_face_flag:
+                            # Yes.
+                            # Set distance reference.
+                            self.distance_reference = self.determine_camera_face_distance(face)
+                            print("Using user's current distance")
+                        else:
+                            print("Using default distance reference")
+
+                    self.start_detect_slouch = True
+                elif key_press == ord("d"):
+                    if not self.start_detect_slouch:
+                        self.start_detect_slouch = True
             else:
                 # No.
-                # Show controls for setting distance reference.
-                cv2.putText(bgr_image, "Sit properly, press C to lock in your proper sitting position", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-                cv2.putText(bgr_image, "Press D to use default sitting position", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-
-            # Display webcam/video output to window.
-            cv2.imshow("Slouch Detection", bgr_image)
-
-            key_press = cv2.waitKey(1) & 0xFF
-
-            # Did user pressed `q`?
-            if key_press == ord("q"):
-                # Yes.
-                # Break out of loop to stop video capture.
-                break
-            elif key_press == ord("c"):
-                if not self.start_detect_slouch:
-                    detected_face_flag, face = self.detect_face(bgr_image)
-
-                    # Are there any faces detected?
-                    if detected_face_flag:
-                        # Yes.
-                        # Set distance reference.
-                        self.distance_reference = self.determine_camera_face_distance(face)
-                        print("Using user's current distance")
-                    else:
-                        print("Using default distance reference")
-
-                self.start_detect_slouch = True
-            elif key_press == ord("d"):
-                self.start_detect_slouch = True
+                # Start slouch detection.
+                self.process_slouch_detection(bgr_image)
 
         # Release the video capture and destroy all windows if user opted to stop the video capture.
         self.video.release()
         cv2.destroyAllWindows()
+
+        # Create filename for current list of slouch data.
+        current_datetime = datetime.datetime.now()
+        filename = "slouch_" + str(current_datetime.year) + str(current_datetime.month) + str(
+            current_datetime.date()) + str(
+            current_datetime.hour) + str(current_datetime.minute) + str(current_datetime.second)
+
+        # Save slouch data to database.
+        data_access.SlouchDataAccess().save_slouch(filename, self.slouch_list_data)
+
+        print("Slouch detection done")
 
     def process_slouch_detection(self, bgr_image):
         # Detect face.
@@ -107,10 +152,34 @@ class SlouchApp:
             # Is user slouching?
             if slouch_flag:
                 # Yes.
-                cv2.putText(bgr_image, "You are slouching", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                # Start timer when user slouched.
+                if self.is_slouching == 0:
+                    self.is_slouching = time.time()
+                    self.slouched_time_difference = 0
+
+                # When user started slouching, get the difference from is_straighten.
+                if self.is_straighten != 0:
+                    self.straighten_time_difference = (time.time() - self.is_straighten) * 1000
+                    self.is_straighten = 0
+
+                # Show texts if user opted to use webcam.
+                if self.use_webcam:
+                    cv2.putText(bgr_image, "You are slouching", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
             else:
                 # No.
-                cv2.putText(bgr_image, "You are sitting properly", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                # Start timer when user sat properly.
+                if self.is_straighten == 0:
+                    self.is_straighten = time.time()
+                    self.straighten_time_difference = 0
+
+                # When user stopped slouching, get the difference from is_slouching.
+                if self.is_slouching != 0:
+                    self.slouched_time_difference = (time.time() - self.is_slouching) * 1000
+                    self.is_slouching = 0
+
+                # Show texts if user opted to use webcam.
+                if self.use_webcam:
+                    cv2.putText(bgr_image, "You are sitting properly", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
             # Was the head tilting properly determined?
             if head_tilt_detected_flag:
@@ -118,10 +187,43 @@ class SlouchApp:
                 # Was head tilting?
                 if head_tilt_flag:
                     # Yes.
-                    cv2.putText(bgr_image, "Head tilting", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                    # Start timer when user's head tilted.
+                    if self.is_head_tilted == 0:
+                        self.is_head_tilted = time.time()
+                        self.head_tilted_time_difference = 0
+
+                    # When user's head tilted, get the difference from is_head_straight.
+                    if self.is_head_straight != 0:
+                        self.head_straight_time_difference = (time.time() - self.is_head_straight) * 1000
+                        self.is_head_straight = 0
+
+                    # Show texts if user opted to use webcam.
+                    if self.use_webcam:
+                        cv2.putText(bgr_image, "Head tilting", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
                 else:
                     # No.
-                    cv2.putText(bgr_image, "Head straight-up", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                    # Start timer when user's head straightened.
+                    if self.is_head_straight == 0:
+                        self.is_head_straight = time.time()
+                        self.head_straight_time_difference = 0
+
+                    # When user's head straightened, get the difference from is_head_tilted.
+                    if self.is_head_tilted != 0:
+                        self.head_tilted_time_difference = (time.time() - self.is_head_tilted) * 1000
+                        self.is_head_tilted = 0
+
+                    # Show texts if user opted to use webcam.
+                    if self.use_webcam:
+                        cv2.putText(bgr_image, "Head straight-up", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+
+            # Push slouching data to dictionary.
+            self.slouch_list_data.append({
+                "slouch": self.slouched_time_difference,
+                "straight": self.straighten_time_difference,
+                "head_tilted": self.head_tilted_time_difference,
+                "head_straight": self.head_straight_time_difference,
+                "time": (time.time() - self.start_time) * 1000
+            })
 
     def detect_face(self, bgr_image):
         """
