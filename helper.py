@@ -41,4 +41,4 @@ def get_thoracolumbar_tolerance():
     Use to adjust the sensitivity of slouch detection. Sane values will 0.05 - 0.3.
     :return: The float value of thoracolumbar tolerance.
     """
-    return 0.3
+    return 0.10

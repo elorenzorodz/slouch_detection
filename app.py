@@ -1,7 +1,6 @@
 import helper
 from math import sqrt, atan
 import cv2
-import time
 
 
 class SlouchApp:
@@ -44,7 +43,7 @@ class SlouchApp:
                 break
 
             # Display quit option.
-            cv2.putText(bgr_image, "Press Q to quit.", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+            cv2.putText(bgr_image, "Press Q to quit.", (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
             # Did user locked in their proper posture?
             if self.start_detect_slouch:
@@ -54,28 +53,34 @@ class SlouchApp:
             else:
                 # No.
                 # Show controls for setting distance reference.
-                cv2.putText(bgr_image, "Please sit properly then press C to lock in your proper sitting position.", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                cv2.putText(bgr_image, "Sit properly, press C to lock in your proper sitting position", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                cv2.putText(bgr_image, "Press D to use default sitting position", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
             # Display webcam/video output to window.
             cv2.imshow("Slouch Detection", bgr_image)
 
+            key_press = cv2.waitKey(1) & 0xFF
+
             # Did user pressed `q`?
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            if key_press == ord("q"):
                 # Yes.
                 # Break out of loop to stop video capture.
                 break
-            elif cv2.waitKey(1) & 0xFF == ord("c"):
-                detected_face_flag, face = self.detect_face(bgr_image)
+            elif key_press == ord("c"):
+                if not self.start_detect_slouch:
+                    detected_face_flag, face = self.detect_face(bgr_image)
 
-                # Are there any faces detected?
-                if detected_face_flag:
-                    # Yes.
-                    # Set distance reference.
-                    self.distance_reference = self.determine_camera_face_distance(face)
-                    print("Using user's current distance")
-                else:
-                    print("Using default distance reference")
+                    # Are there any faces detected?
+                    if detected_face_flag:
+                        # Yes.
+                        # Set distance reference.
+                        self.distance_reference = self.determine_camera_face_distance(face)
+                        print("Using user's current distance")
+                    else:
+                        print("Using default distance reference")
 
+                self.start_detect_slouch = True
+            elif key_press == ord("d"):
                 self.start_detect_slouch = True
 
         # Release the video capture and destroy all windows if user opted to stop the video capture.
@@ -92,31 +97,31 @@ class SlouchApp:
             # Determine distance of face from the camera.
             self.distance = self.determine_camera_face_distance(face)
 
-            # Is user slouching?
-            slouch_flag = self.is_user_slouching()
-
-            if slouch_flag:
-                cv2.putText(bgr_image, "You are slouching", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            else:
-                cv2.putText(bgr_image, "You are sitting properly", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
             # Detect eyes to determine head angle or if head is tilted.
-            # x, y, w, h = face
-            # face_image = bgr_image[y:y+h, x:x+w]
-            # head_tilt_flag, self.angle = self.determine_head_angle(face_image)
+            x, y, w, h = face
+            face_image = bgr_image[y:y + h, x:x + w]
+            head_tilt_detected_flag, self.angle = self.determine_head_angle(face_image)
+
+            slouch_flag, head_tilt_flag = self.is_user_slouching()
+
+            # Is user slouching?
+            if slouch_flag:
+                # Yes.
+                cv2.putText(bgr_image, "You are slouching", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            else:
+                # No.
+                cv2.putText(bgr_image, "You are sitting properly", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
             # Was the head tilting properly determined?
-            # if head_tilt_flag:
-            #     # Yes.
-            #     # Is user slouching?
-            #     slouch_flag = self.is_user_slouching()
-            #
-            #     if slouch_flag:
-            #         cv2.putText(bgr_image, "You are slouching", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            #     else:
-            #         cv2.putText(bgr_image, "You are sitting properly", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            # else:
-            #     print(self.angle)
+            if head_tilt_detected_flag:
+                # Yes.
+                # Was head tilting?
+                if head_tilt_flag:
+                    # Yes.
+                    cv2.putText(bgr_image, "Head tilting", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                else:
+                    # No.
+                    cv2.putText(bgr_image, "Head straight-up", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
     def detect_face(self, bgr_image):
         """
@@ -128,7 +133,8 @@ class SlouchApp:
         face_classifier = cv2.CascadeClassifier(self.face_classifier)
 
         # Detect face in the image.
-        faces = face_classifier.detectMultiScale(image=bgr_image, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40), flags=cv2.CASCADE_SCALE_IMAGE)
+        faces = face_classifier.detectMultiScale(image=bgr_image, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40),
+                                                 flags=cv2.CASCADE_SCALE_IMAGE)
 
         try:
             # Assume largest face is the subject.
@@ -188,7 +194,7 @@ class SlouchApp:
         c_max = self.distance_reference * (1.0 + self.thoracolumbar_tolerance)
 
         slouching_flag = True
-        # head_tilt_flag = False
+        head_tilt_flag = False
 
         # Is user slouching?
         if c_min <= self.distance <= c_max:
@@ -196,8 +202,9 @@ class SlouchApp:
             slouching_flag = False
 
         # Is user's head tilted?
-        # if self.angle > 0.4:
-        #     # Yes.
-        #     head_tilt_flag = True
+        if isinstance(self.angle, float):
+            if self.angle > 0.33:
+                # Yes.
+                head_tilt_flag = True
 
-        return slouching_flag
+        return slouching_flag, head_tilt_flag
