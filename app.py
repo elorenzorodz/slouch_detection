@@ -2,8 +2,6 @@ import helper
 from math import sqrt, atan
 import cv2
 import time
-import datetime
-import data_access
 
 
 class SlouchApp:
@@ -14,8 +12,6 @@ class SlouchApp:
         self.face_classifier = helper.get_face_classifier()
         self.distance_reference = helper.get_distance_reference()
         self.thoracolumbar_tolerance = helper.get_thoracolumbar_tolerance()
-        self.slouch_list_data = []
-        self.start_time = 0
 
         # These will be used to compute for time difference for slouching and sitting straight.
         self.is_slouching = 0
@@ -52,9 +48,6 @@ class SlouchApp:
         """
         Open the webcam or video.
         """
-        # Timer in seconds.
-        self.start_time = time.time()
-
         print("Slouch detection start")
 
         # Keep showing video.
@@ -120,15 +113,6 @@ class SlouchApp:
         # Release the video capture and destroy all windows if user opted to stop the video capture.
         self.video.release()
         cv2.destroyAllWindows()
-
-        # Create filename for current list of slouch data.
-        current_datetime = datetime.datetime.now()
-        filename = "slouch_" + str(current_datetime.year) + str(current_datetime.month) + str(
-            current_datetime.date()) + str(
-            current_datetime.hour) + str(current_datetime.minute) + str(current_datetime.second)
-
-        # Save slouch data to database.
-        data_access.SlouchDataAccess().save_slouch(filename, self.slouch_list_data)
 
         print("Slouch detection done")
 
@@ -216,15 +200,6 @@ class SlouchApp:
                     if self.use_webcam:
                         cv2.putText(bgr_image, "Head straight-up", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
-            # Push slouching data to dictionary.
-            self.slouch_list_data.append({
-                "slouch": self.slouched_time_difference,
-                "straight": self.straighten_time_difference,
-                "head_tilted": self.head_tilted_time_difference,
-                "head_straight": self.head_straight_time_difference,
-                "time": (time.time() - self.start_time) * 1000
-            })
-
     def detect_face(self, bgr_image):
         """
         Detect face using face classifier.
@@ -283,6 +258,8 @@ class SlouchApp:
             slope = (left_eye[1] - right_eye[1] / left_eye[0] - right_eye[0])
             angle = abs(atan(slope))
 
+            print(angle)
+
             return True, angle
         else:
             return False, "No eyes detected."
@@ -305,7 +282,7 @@ class SlouchApp:
 
         # Is user's head tilted?
         if isinstance(self.angle, float):
-            if self.angle > 0.33:
+            if self.angle > 1.5:
                 # Yes.
                 head_tilt_flag = True
 
